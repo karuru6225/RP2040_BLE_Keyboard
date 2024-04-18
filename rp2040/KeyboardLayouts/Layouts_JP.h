@@ -1,0 +1,145 @@
+#pragma once
+
+#include <Arduino.h>
+#include "Layouts.h"
+
+
+#define KEY_JP_HANZEN       KEY_GRAVE_ACCENT_TILDE
+#define KEY_JP_RIGHT_BRACE  KEY_NON_US_HASH_TILDE
+#define KEY_JP_BACKSLASH    KEY_INTERNATIONAL1
+#define KEY_JP_HIRAGANA     KEY_INTERNATIONAL2
+#define KEY_JP_YEN          KEY_INTERNATIONAL3
+#define KEY_JP_HENKAN       KEY_INTERNATIONAL4
+#define KEY_JP_MUHENKAN     KEY_INTERNATIONAL5
+
+static const uint16_t _asciimap[] = {
+    KEY_RESERVED,                                 // NUL
+    KEY_RESERVED,                                 // SOH
+    KEY_RESERVED,                                 // STX
+    KEY_RESERVED,                                 // ETX
+    KEY_RESERVED,                                 // EOT
+    KEY_RESERVED,                                 // ENQ
+    KEY_RESERVED,                                 // ACK
+    KEY_RESERVED,                                 // BEL
+    KEY_BACKSPACE,                                // Backspace
+    KEY_TAB,                                      // Tab
+    KEY_ENTER,                                    // LF
+    KEY_RESERVED,                                 // VT
+    KEY_RESERVED,                                 // FF
+    KEY_RESERVED,                                 // CR
+    KEY_RESERVED,                                 // SO
+    KEY_RESERVED,                                 // SI
+    KEY_RESERVED,                                 // DEL
+    KEY_RESERVED,                                 // DC1
+    KEY_RESERVED,                                 // DC2
+    KEY_RESERVED,                                 // DC3
+    KEY_RESERVED,                                 // DC4
+    KEY_RESERVED,                                 // NAK
+    KEY_RESERVED,                                 // SYN
+    KEY_RESERVED,                                 // ETB
+    KEY_RESERVED,                                 // CAN
+    KEY_RESERVED,                                 // EM
+    KEY_RESERVED,                                 // SUB
+    KEY_RESERVED,                                 // ESC
+    KEY_RESERVED,                                 // FS
+    KEY_RESERVED,                                 // GS
+    KEY_RESERVED,                                 // RS
+    KEY_RESERVED,                                 // US
+
+    KEY_SPACEBAR,                                 // Space
+    KEY_1_EXCLAMATION|MOD_LEFT_SHIFT,             // !
+    KEY_2_AT|MOD_LEFT_SHIFT,                      // "
+    KEY_3_NUMBER|MOD_LEFT_SHIFT,                  // #
+    KEY_4_DOLLAR|MOD_LEFT_SHIFT,                  // $
+    KEY_5_PERCENT|MOD_LEFT_SHIFT,                 // %
+    KEY_6_CARET|MOD_LEFT_SHIFT,                   // &
+    KEY_7_AMPERSAND|MOD_LEFT_SHIFT,               // '
+    KEY_8_ASTERISK|MOD_LEFT_SHIFT,                // (
+    KEY_9_LEFT_PARENTHESIS|MOD_LEFT_SHIFT,        // )
+    KEY_APOSTROPHE_QUOTE|MOD_LEFT_SHIFT,          // *
+    KEY_SEMICOLON_COLON|MOD_LEFT_SHIFT,           // +
+    KEY_COMMA_LEFT_ARROW,                         // ,
+    KEY_MINUS_UNDERSCORE,                         // -
+    KEY_DOT_RIGHT_ARROW,                          // .
+    KEY_SLASH_QUESTION,                           // /
+    KEY_0_RIGHT_PARENTHESIS,                      // 0
+    KEY_1_EXCLAMATION,                            // 1
+    KEY_2_AT,                                     // 2
+    KEY_3_NUMBER,                                 // 3
+    KEY_4_DOLLAR,                                 // 4
+    KEY_5_PERCENT,                                // 5
+    KEY_6_CARET,                                  // 6
+    KEY_7_AMPERSAND,                              // 7
+    KEY_8_ASTERISK,                               // 8
+    KEY_9_LEFT_PARENTHESIS,                       // 9
+    KEY_APOSTROPHE_QUOTE,                         // :
+    KEY_SEMICOLON_COLON,                          // ;
+    KEY_COMMA_LEFT_ARROW|MOD_LEFT_SHIFT,          // <
+    KEY_MINUS_UNDERSCORE|MOD_LEFT_SHIFT,          // =
+    KEY_DOT_RIGHT_ARROW|MOD_LEFT_SHIFT,           // >
+    KEY_SLASH_QUESTION|MOD_LEFT_SHIFT,            // ?
+    KEY_LEFT_BRACKET_LEFT_BRACE,                  // @
+    KEY_A|MOD_LEFT_SHIFT,                         // A
+    KEY_B|MOD_LEFT_SHIFT,                         // B
+    KEY_C|MOD_LEFT_SHIFT,                         // C
+    KEY_D|MOD_LEFT_SHIFT,                         // D
+    KEY_E|MOD_LEFT_SHIFT,                         // E
+    KEY_F|MOD_LEFT_SHIFT,                         // F
+    KEY_G|MOD_LEFT_SHIFT,                         // G
+    KEY_H|MOD_LEFT_SHIFT,                         // H
+    KEY_I|MOD_LEFT_SHIFT,                         // I
+    KEY_J|MOD_LEFT_SHIFT,                         // J
+    KEY_K|MOD_LEFT_SHIFT,                         // K
+    KEY_L|MOD_LEFT_SHIFT,                         // L
+    KEY_M|MOD_LEFT_SHIFT,                         // M
+    KEY_N|MOD_LEFT_SHIFT,                         // N
+    KEY_O|MOD_LEFT_SHIFT,                         // O
+    KEY_P|MOD_LEFT_SHIFT,                         // P
+    KEY_Q|MOD_LEFT_SHIFT,                         // Q
+    KEY_R|MOD_LEFT_SHIFT,                         // R
+    KEY_S|MOD_LEFT_SHIFT,                         // S
+    KEY_T|MOD_LEFT_SHIFT,                         // T
+    KEY_U|MOD_LEFT_SHIFT,                         // U
+    KEY_V|MOD_LEFT_SHIFT,                         // V
+    KEY_W|MOD_LEFT_SHIFT,                         // W
+    KEY_X|MOD_LEFT_SHIFT,                         // X
+    KEY_Y|MOD_LEFT_SHIFT,                         // Y
+    KEY_Z|MOD_LEFT_SHIFT,                         // Z
+    KEY_RIGHT_BRACKET_RIGHT_BRACE,                // [
+    KEY_JP_BACKSLASH,                             // backslash
+    KEY_JP_RIGHT_BRACE,                           // ]
+    KEY_EQUAL_PLUS,                               // ^
+    KEY_JP_BACKSLASH|MOD_LEFT_SHIFT,              // _
+    KEY_LEFT_BRACKET_LEFT_BRACE|MOD_LEFT_SHIFT,   // `
+    KEY_A,                                        // a
+    KEY_B,                                        // b
+    KEY_C,                                        // c
+    KEY_D,                                        // d
+    KEY_E,                                        // e
+    KEY_F,                                        // f
+    KEY_G,                                        // g
+    KEY_H,                                        // h
+    KEY_I,                                        // i
+    KEY_J,                                        // j
+    KEY_K,                                        // k
+    KEY_L,                                        // l
+    KEY_M,                                        // m
+    KEY_N,                                        // n
+    KEY_O,                                        // o
+    KEY_P,                                        // p
+    KEY_Q,                                        // q
+    KEY_R,                                        // r
+    KEY_S,                                        // s
+    KEY_T,                                        // t
+    KEY_U,                                        // u
+    KEY_V,                                        // v
+    KEY_W,                                        // w
+    KEY_X,                                        // x
+    KEY_Y,                                        // y
+    KEY_Z,                                        // z
+    KEY_RIGHT_BRACKET_RIGHT_BRACE|MOD_LEFT_SHIFT, // {
+    KEY_JP_YEN|MOD_LEFT_SHIFT,                    // |
+    KEY_JP_RIGHT_BRACE|MOD_LEFT_SHIFT,            // }
+    KEY_EQUAL_PLUS|MOD_LEFT_SHIFT,                // ~
+    KEY_DELETE_FORWRD,                            // DEL
+};
