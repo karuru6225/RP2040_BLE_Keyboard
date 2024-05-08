@@ -6,7 +6,7 @@
 #include "SerialKeyboard_common.h"
 #include "HID_Keyboard.h"
 
-// #define DEBUG
+#define DEBUG
 #define PACKET_QUEUE_SIZE 16
 #define SEND_WINDOW_SIZE 1
 #define SEQUENCE_START 4
@@ -26,6 +26,7 @@ enum AdvertisingState : uint8_t
 class SerialKeyboardClient_ : public HID_Keyboard
 {
 private:
+  bool uartPaused = false;
   PacketSerial packetSerial;
   uint8_t ledState;
   uint8_t connectionID;
@@ -36,7 +37,9 @@ private:
   unsigned long lastDebugOutput = 0;
   semaphore_t *queueSemaphore;
   AdvertisingState advertising = UNKNOWN;
-  char connectionNames[MAX_CONNECTIONS][CONNECTION_NAME_LENGTH];
+  // char connectionNames[MAX_CONNECTIONS][CONNECTION_NAME_LENGTH];
+  // uint8_t macAddresses[MAX_CONNECTIONS][MAC_ADDRESS_LENGTH];
+  ConnectionInfo connectionInfo[MAX_CONNECTIONS];
   uint8_t pqueueHead = 0;
   uint8_t pqueueTail = 0;
   uint8_t sequenceNum = SEQUENCE_START;
@@ -44,7 +47,7 @@ private:
   bool bootAckReceived = false;
   NormalPacket packetQueue[PACKET_QUEUE_SIZE];
   bool pushPacket(NormalPacket *);
-  void popPacket(void);
+  bool popPacket(void);
   bool sendPacket(NormalPacket *);
   uint8_t getSendingCount(void);
   void semaphoreAcquire(void);
@@ -57,13 +60,15 @@ private:
 public:
   SerialKeyboardClient_();
   void setStream(Stream *);
-  void begin();
+  void begin(void);
+  void pauseUart(void);
+  void resumeUart(void);
   void _recievePacket(const uint8_t *data, size_t size);
-  void update(void);
-  AdvertisingState getAdvertisingState(void);
+  bool update(void);
+  AdvertisingState refreshAdvertisingState(void);
   void startAdv(void);
   void stopAdv(void);
-  void getConnectionInfo(void);
+  void refreshConnectionInfo(void);
   void switchConnection(uint8_t);
   virtual int send(void);
   void getConnectionName(uint8_t, char *);

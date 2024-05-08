@@ -6,7 +6,7 @@
 #include "SerialKeyboard_common.h"
 #include "HID_Keyboard.h"
 
-#define PACKET_QUEUE_SIZE ((uint8_t)16)
+#define PACKET_QUEUE_SIZE ((uint8_t)4)
 
 class SerialKeyboardHost_ : public HID_Keyboard
 {
@@ -27,6 +27,7 @@ private:
   bool pushPacket(NormalPacket *packet);
   void popPacket(void);
   void processPacket(NormalPacket *packet);
+  void respondConnectionInfo(uint8_t sequenceNum);
 
 public:
   SerialKeyboardHost_();
@@ -38,8 +39,6 @@ public:
 
   void startAdv(void);
   void stopAdv(void);
-
-  void setBatteryLevel(uint8_t level);
 
   void switchConnection(uint8_t idx);
   bool isConnected(uint8_t idx);

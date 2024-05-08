@@ -22,6 +22,10 @@
 
 #define OLED_RESET -1       // Reset pin # (or -1 if sharing Arduino reset pin)
 #define SCREEN_ADDRESS 0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
+#define BAUDRATE 115200
+
+#define MAX_UPDATE_WAIT 500
+#define INITIAL_UPDATE_WAIT 10
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire1, OLED_RESET);
 
@@ -32,16 +36,32 @@ pin_size_t rows[] = {10, 9, 8};
 
 static semaphore_t queueSem;
 
-void setup()
+typedef struct _DisplayInfo
 {
-  sem_init(&queueSem, 1, 1);
+  ConnectionInfo *connectionInfo;
+  uint8_t batteryLevel;
+  bool writerReady;
+} DisplayInfo;
 
+DisplayInfo displayInfo;
+
+void resetBLEModule()
+{
   pinMode(BLE_RESET, OUTPUT);
   digitalWrite(BLE_RESET, LOW);
-  delay(100);
+  delay(200);
   digitalWrite(BLE_RESET, HIGH);
+}
 
-  Serial3.begin(115200);
+void setup()
+{
+  Serial.begin(BAUDRATE);
+  delay(1000);
+  sem_init(&queueSem, 1, 1);
+
+  resetBLEModule();
+
+  Serial3.begin(BAUDRATE);
   SerialKeyboardClient.setStream(&Serial3);
   SerialKeyboardClient.setSemaphore(&queueSem);
 
@@ -66,12 +86,13 @@ void setup()
   // pac.body = NULL;
 
   // SerialKeyboardClient.send(&pac);
-  delay(2000);
+  // delay(2000);
   SerialKeyboardClient.begin();
-  delay(1000);
+  delay(3000);
   SerialKeyboardClient.update();
   delay(2000);
-  SerialKeyboardClient.startAdv();
+  // SerialKeyboardClient.startAdv();
+  // delay(1000);
 }
 
 void setup1()
@@ -100,12 +121,30 @@ void setup1()
 
 unsigned long loop0LastTime = 0;
 unsigned long interval = 30;
+unsigned long updateWait = 10;
 
-char connectionNames[MAX_CONNECTIONS][CONNECTION_NAME_LENGTH];
+bool writerMode = false;
 
 void loop()
 {
-  SerialKeyboardClient.update();
+  if (writerMode)
+  {
+    return;
+  }
+  if (SerialKeyboardClient.update())
+  {
+    updateWait = INITIAL_UPDATE_WAIT;
+  }
+  else
+  {
+    updateWait += 50;
+    if (updateWait > MAX_UPDATE_WAIT)
+    {
+      updateWait = MAX_UPDATE_WAIT;
+    }
+  }
+  delay(updateWait);
+
   unsigned long currentMillis = millis();
   if (currentMillis - loop0LastTime < interval)
   {
@@ -115,15 +154,20 @@ void loop()
 
   KeyboardUsageId idxKeycodeMap[3][3] = {
       {KEY_A, KEY_B, KEY_C},
-      {KEY_D, KEY_E, KEY_F},
-      {KEY_G, KEY_H, KEY_I}};
+      {KEY_LEFT_ALT, KEY_NONE, KEY_LEFT_GUI},
+      {KEY_G, KEY_H, KEY_NONE}};
   size_t changeKey = 0;
+
   for (size_t colIdx = 0; colIdx < sizeof(cols) / sizeof(cols[0]); colIdx++)
   {
     digitalWrite(cols[colIdx], HIGH);
     for (size_t rowIdx = 0; rowIdx < sizeof(rows) / sizeof(rows[0]); rowIdx++)
     {
       KeyboardUsageId keycode = idxKeycodeMap[rowIdx][colIdx];
+      if (keycode == KEY_NONE)
+      {
+        continue;
+      }
       if (digitalRead(rows[rowIdx]) == HIGH)
       {
         changeKey += SerialKeyboardClient.add(keycode);
@@ -136,6 +180,7 @@ void loop()
     digitalWrite(cols[colIdx], LOW);
     delay(0);
   }
+
   if (changeKey > 0)
   {
     SerialKeyboardClient.send();
@@ -149,6 +194,13 @@ unsigned long startShowConnection = 0;
 unsigned long loop1LastTime = 0;
 unsigned long lastConnInfoUpdated = 0;
 
+typedef enum _PushType
+{
+  NO_PUSH,
+  SHORT_PUSH,
+  LONG_PUSH,
+} PushType;
+
 void loop1()
 {
   unsigned long currentMillis = millis();
@@ -157,6 +209,20 @@ void loop1()
     return;
   }
   loop1LastTime = currentMillis;
+
+  PushType pushType = NO_PUSH;
+  if (bootSelPushStartTime != 0)
+  {
+    unsigned long pushTime = currentMillis - bootSelPushStartTime;
+    if (pushTime < 500)
+    {
+      pushType = SHORT_PUSH;
+    }
+    else if (pushTime > 3000)
+    {
+      pushType = LONG_PUSH;
+    }
+  }
 
   if (BOOTSEL)
   {
@@ -169,51 +235,109 @@ void loop1()
   {
     if (bootSelPushStartTime != 0)
     {
-      if (startShowConnection == 0)
+      switch (pushType)
       {
-        SerialKeyboardClient.getConnectionInfo();
+      case SHORT_PUSH:
+        Serial.println("short push");
+        break;
+      case LONG_PUSH:
+        Serial.println("long push");
+        break;
+      default:
+        break;
+      }
+      bootSelPushStartTime = 0;
+      bootSelLastPushTime = currentMillis;
+    }
+
+    if (startShowConnection != 0)
+    {
+      // 接続切り替えモード
+      if (pushType == SHORT_PUSH)
+      {
+        // bootボタン 短押し
+
+        // 接続先切り替え
+        startShowConnection = currentMillis;
+        Serial.println("switch connection");
+        connectionId = (connectionId + 1) % MAX_CONNECTIONS;
+        SerialKeyboardClient.switchConnection(connectionId);
+        displayConnectionInfo(&displayInfo, currentMillis - startShowConnection);
+      }
+      // else if (pushType == LONG_PUSH)
+      // {
+      //   // bootボタン 長押し
+
+      //   // advertising開始
+      //   Serial.println("start adv");
+      //   AdvertisingState adv = SerialKeyboardClient.getAdvertisingState();
+      //   if (adv == NOT_ADVERTISING)
+      //   {
+      //     Serial.println("start adv");
+      //     SerialKeyboardClient.startAdv();
+      //   }
+      // }
+    }
+    else if (writerMode)
+    {
+      // writerモード
+      if (pushType == SHORT_PUSH)
+      {
+        // bootボタン 短押し
+
+        // writerモード終了
+        writerMode = false;
+        resetBLEModule();
+        delay(2000);
+        Serial3.begin(BAUDRATE);
+        SerialKeyboardClient.resumeUart();
+      }
+    }
+    else
+    {
+      // 通常モード
+      if (pushType == SHORT_PUSH)
+      {
+        // bootボタン 短押し
+        // 接続切り替えモード開始
+        startShowConnection = currentMillis;
+        SerialKeyboardClient.refreshConnectionInfo();
         display.ssd1306_command(SSD1306_SETCONTRAST);
         display.ssd1306_command(0xFF);
       }
-      else
+      else if (pushType == LONG_PUSH)
       {
-        if (currentMillis - bootSelPushStartTime < 500)
-        {
-          Serial.println("switch connection");
-          connectionId = (connectionId + 1) % MAX_CONNECTIONS;
-          SerialKeyboardClient.switchConnection(connectionId);
-          displayConnectionInfo(currentMillis - startShowConnection);
-        }
-        else if (currentMillis - bootSelPushStartTime > 3000)
-        {
-          Serial.println("start adv");
-          AdvertisingState adv = SerialKeyboardClient.getAdvertisingState();
-          if (adv == NOT_ADVERTISING)
-          {
-            Serial.println("start adv");
-            SerialKeyboardClient.startAdv();
-          }
-        }
+        // bootボタン 長押し
+        // writerModeを有効化
+        writerMode = true;
+        SerialKeyboardClient.pauseUart();
+        Serial3.end();
+        pinMode(TX, INPUT);
+        pinMode(RX, INPUT);
+        pinMode(BLE_RESET, INPUT);
       }
+    }
+  }
 
-      bootSelPushStartTime = 0;
-      startShowConnection = currentMillis;
-      bootSelLastPushTime = currentMillis;
-    }
-  }
-  if (startShowConnection == 0 && currentMillis - lastConnInfoUpdated > CONN_INFO_BG_UPDATE_INTERVAL ||
-      startShowConnection != 0 && currentMillis - lastConnInfoUpdated > CONN_INFO_FG_UPDATE_INTERVAL)
+  // if (startShowConnection == 0 && currentMillis - lastConnInfoUpdated > CONN_INFO_BG_UPDATE_INTERVAL ||
+  //     startShowConnection != 0 && currentMillis - lastConnInfoUpdated > CONN_INFO_FG_UPDATE_INTERVAL)
+  if (startShowConnection != 0 && currentMillis - lastConnInfoUpdated > CONN_INFO_FG_UPDATE_INTERVAL)
   {
-    for (int i = 0; i < MAX_CONNECTIONS; i++)
-    {
-      SerialKeyboardClient.getConnectionName(i, connectionNames[i]);
-    }
     lastConnInfoUpdated = currentMillis;
-    SerialKeyboardClient.getConnectionInfo();
+    SerialKeyboardClient.refreshConnectionInfo();
   }
+
   if (startShowConnection == 0)
   {
-    displayMainInfo();
+    // 通常モード
+    // writerモード
+
+    for (int i = 0; i < MAX_CONNECTIONS; i++)
+    {
+      SerialKeyboardClient.getConnectionName(i, displayInfo.connectionName[i]);
+    }
+    displayInfo.writerReady = pushType == LONG_PUSH && !writerMode && startShowConnection == 0;
+    displayMainInfo(&displayInfo);
   }
   else
   {
@@ -227,7 +351,11 @@ void loop1()
     }
     else
     {
-      displayConnectionInfo(currentMillis - startShowConnection);
+      for (int i = 0; i < MAX_CONNECTIONS; i++)
+      {
+        SerialKeyboardClient.getConnectionName(i, displayInfo.connectionName[i]);
+      }
+      displayConnectionInfo(&displayInfo, currentMillis - startShowConnection);
     }
   }
 }
@@ -253,14 +381,14 @@ void drawBattery(uint8_t x, uint8_t y)
   }
 }
 
-void displayMainInfo()
+void displayMainInfo(DisplayInfo *displayInfo)
 {
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
   for (int i = 0; i < MAX_CONNECTIONS; i++)
   {
-    if (i == connectionId && strlen(connectionNames[i]) > 0)
+    if (i == connectionId && strlen(displayInfo->connectionName[i]) > 0)
     {
       // display.fillRect(i * CONN_IND_WIDTH, 0, CONN_IND_WIDTH, 2, SSD1306_WHITE);
     }
@@ -271,14 +399,30 @@ void displayMainInfo()
     //   // display.drawRect(i * CONN_IND_WIDTH, 0, CONN_IND_WIDTH, 2, SSD1306_WHITE);
     // }
   }
+  if (displayInfo->writerReady)
+  {
+    display.setCursor(0, FONT_OFFSET_Y);
+    display.print("Long");
+  }
   drawBattery(SCREEN_WIDTH - BATT_W - 1, 1);
   display.drawFastHLine(0, BATT_H + 1, SCREEN_WIDTH, SSD1306_WHITE);
   display.setCursor(0, FONT_OFFSET_Y + BATT_H + 2);
-  display.print(connectionNames[connectionId]);
+  if (writerMode)
+  {
+    display.print("Writer Mode");
+  }
+  else
+  {
+    // display.print("Connection:");
+    // display.print(connectionId);
+    // display.print(" ");
+    display.print(displayInfo->connectionName[connectionId]);
+  }
+  // display.print(connectionNames[connectionId])
   display.display();
 }
 
-void displayConnectionInfo(unsigned long showingTime)
+void displayConnectionInfo(DisplayInfo *displayInfo, unsigned long showingTime)
 {
   display.clearDisplay();
   display.setTextSize(1);
@@ -297,7 +441,7 @@ void displayConnectionInfo(unsigned long showingTime)
     }
     display.print(i);
     display.print(":");
-    display.println(connectionNames[i]);
+    display.println(displayInfo->connectionName[i]);
   }
 
   uint16_t lineLen = showingTime * SCREEN_WIDTH / SHOW_CONNECTION_TIMEOUT;

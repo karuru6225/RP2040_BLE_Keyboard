@@ -1,8 +1,7 @@
 #include <bluefruit.h>
 #include "SerialKeyboardHost.h"
 
-BLEDis bledis; // Device Information Service
-BLEBas blebas; // Battery Service
+BLEDis bledis;
 BLEHidAdafruit blehid;
 
 void indicateDebug(void)
@@ -32,6 +31,7 @@ void SerialKeyboardHost_::_connect(uint16_t conn_handle)
         current_conn_idx = i;
       }
       // indicateDebug();
+      respondConnectionInfo(0);
       if (getConnectionCount() < MAX_CONNECTIONS)
       {
         startAdv();
@@ -53,6 +53,7 @@ void SerialKeyboardHost_::_disconnect(uint16_t conn_handle)
     {
       conn_handles[i] = DISCONNECTED;
       startAdv();
+      respondConnectionInfo(0);
       return;
     }
   }
@@ -114,7 +115,7 @@ void SerialKeyboardHost_::begin()
   initBle();
 
   pinMode(11, OUTPUT);
-  //
+
   // indicateDebug();
 }
 
@@ -127,6 +128,7 @@ void SerialKeyboardHost_::initBle(void)
   }
 
   Bluefruit.autoConnLed(false);
+  Bluefruit.configAttrTableSize(1280);
   Bluefruit.begin(MAX_CONNECTIONS, 0);
   // Bluefruit.begin();
 
@@ -140,10 +142,8 @@ void SerialKeyboardHost_::initBle(void)
   bledis.setModel("Bluefruit Feather52");
   bledis.begin();
 
-  blebas.begin();
-  blebas.write(100);
-
   blehid.begin();
+
   blehid.setKeyboardLedCallback(led_callback);
 }
 
@@ -224,6 +224,58 @@ void SerialKeyboardHost_::popPacket(void)
   pqueueHead = (pqueueHead + 1) % PACKET_QUEUE_SIZE;
 }
 
+void SerialKeyboardHost_::respondConnectionInfo(uint8_t sequenceNum)
+{
+  AckPacket ack;
+
+  uint8_t connBitmap = 0;
+
+  // uint8_t macAddresses[MAX_CONNECTIONS * MAC_ADDRESS_LENGTH];
+  // char names[MAX_CONNECTIONS * CONNECTION_NAME_LENGTH];
+  ConnectionInfo connInfo[MAX_CONNECTIONS];
+  memset(connInfo, 0, MAX_CONNECTIONS * (MAC_ADDRESS_LENGTH + CONNECTION_NAME_LENGTH));
+  for (int i = 0; i < MAX_CONNECTIONS; i++)
+  {
+    // memset(names + i * CONNECTION_NAME_LENGTH, 0, CONNECTION_NAME_LENGTH);
+    // memset(macAddresses + i * MAC_ADDRESS_LENGTH, 0, MAC_ADDRESS_LENGTH);
+    if (conn_handles[i] != DISCONNECTED)
+    {
+      connBitmap |= (1 << i);
+      BLEConnection *conn = Bluefruit.Connection((uint16_t)conn_handles[i]);
+      if (conn)
+      {
+        // uint16_t nameLength = conn->getPeerName(names + i * CONNECTION_NAME_LENGTH, CONNECTION_NAME_LENGTH - 1);
+        // names[i * CONNECTION_NAME_LENGTH + nameLength] = '\0';
+        // conn->getPeerAddr(macAddresses + i * MAC_ADDRESS_LENGTH);
+        ble_gap_addr_t gap = conn->getPeerAddr();
+        memcpy(connInfo[i].mac, gap.addr, MAC_ADDRESS_LENGTH);
+        conn->getPeerName(connInfo[i].name, CONNECTION_NAME_LENGTH - 1);
+      }
+      else
+      {
+        // names[i * CONNECTION_NAME_LENGTH] = '\0';
+      }
+    }
+    else
+    {
+      // names[i * CONNECTION_NAME_LENGTH] = '\0';
+    }
+  }
+
+  uint8_t body[2 + MAX_CONNECTIONS * (MAC_ADDRESS_LENGTH + CONNECTION_NAME_LENGTH)];
+
+  body[0] = MAX_CONNECTIONS;
+  body[1] = connBitmap;
+  memcpy(body + 2, connInfo, MAX_CONNECTIONS * (MAC_ADDRESS_LENGTH + CONNECTION_NAME_LENGTH));
+
+  ack.ackBodyLength = sizeof(body);
+  ack.result = SUCCESS;
+  ack.requestCommand = GET_CONNECTION_INFO;
+  ack.sequenceNum = sequenceNum;
+  ack.body = body;
+  respondAck(&ack);
+}
+
 void SerialKeyboardHost_::processPacket(NormalPacket *packet)
 {
   digitalWrite(11, HIGH);
@@ -261,60 +313,9 @@ void SerialKeyboardHost_::processPacket(NormalPacket *packet)
     stopAdv();
     respondSuccess(STOP_ADV, packet->sequenceNum);
   }
-  break;
-  case SET_BATTERY_LEVEL:
-  {
-    if (packet->bodyLength < 1)
-    {
-      respondFailure(SET_BATTERY_LEVEL, packet->sequenceNum);
-      return;
-    }
-    setBatteryLevel(packet->body[0]);
-    respondSuccess(SET_BATTERY_LEVEL, packet->sequenceNum);
-  }
-  break;
   case GET_CONNECTION_INFO:
   {
-    AckPacket ack;
-    ack.requestCommand = GET_CONNECTION_INFO;
-    ack.sequenceNum = packet->sequenceNum;
-    uint8_t connBitmap = 0;
-
-    char names[MAX_CONNECTIONS * CONNECTION_NAME_LENGTH];
-    for (int i = 0; i < MAX_CONNECTIONS; i++)
-    {
-      memset(names + i * CONNECTION_NAME_LENGTH, 0, CONNECTION_NAME_LENGTH);
-      if (conn_handles[i] != DISCONNECTED)
-      {
-        connBitmap |= (1 << i);
-        BLEConnection *conn = Bluefruit.Connection((uint16_t)conn_handles[i]);
-        if (conn)
-        {
-          uint16_t nameLength = conn->getPeerName(names + i * CONNECTION_NAME_LENGTH, CONNECTION_NAME_LENGTH);
-          names[i * CONNECTION_NAME_LENGTH + nameLength] = '\0';
-        }
-        else
-        {
-          names[i * CONNECTION_NAME_LENGTH] = '\0';
-        }
-      }
-      else
-      {
-        names[i * CONNECTION_NAME_LENGTH] = '\0';
-      }
-    }
-
-    //  Max Connection Count + Connection State bitmap = 2
-    // 2 + Connection1 Name + ...
-    ack.ackBodyLength = (uint8_t)(2 + MAX_CONNECTIONS * CONNECTION_NAME_LENGTH);
-    ack.result = SUCCESS;
-    uint8_t body[2 + MAX_CONNECTIONS * CONNECTION_NAME_LENGTH];
-    body[0] = MAX_CONNECTIONS;
-    body[1] = connBitmap;
-    memcpy(body + 2, names, MAX_CONNECTIONS * CONNECTION_NAME_LENGTH);
-    ack.body = body;
-    respondAck(&ack);
-
+    respondConnectionInfo(packet->sequenceNum);
     // uint8_t body[2 + MAX_CONNECTIONS * 6];
     // for (int i = 0; i < MAX_CONNECTIONS; i++) {
     //   if (conn_handles[i] == DISCONNECTED) {
@@ -493,11 +494,6 @@ void SerialKeyboardHost_::startAdv(void)
 void SerialKeyboardHost_::stopAdv(void)
 {
   Bluefruit.Advertising.stop();
-}
-
-void SerialKeyboardHost_::setBatteryLevel(uint8_t level)
-{
-  blebas.write(level);
 }
 
 void SerialKeyboardHost_::switchConnection(uint8_t idx)

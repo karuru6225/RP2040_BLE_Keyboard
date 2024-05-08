@@ -3,6 +3,7 @@
 #ifdef DEBUG
 void debugPrint(const char *label, const uint8_t *data, size_t size)
 {
+  Serial.println("--- debug ---");
   Serial.println(label);
   Serial.print("millis: ");
   Serial.println(millis());
@@ -99,7 +100,9 @@ void SerialKeyboardClient_::_recievePacket(const uint8_t *data, size_t size)
   if (ack.requestCommand == START)
   {
     bootAckReceived = true;
-    // Serial.println("boot ack received");
+#ifdef DEBUG
+    Serial.println("boot ack received");
+#endif
   }
   else
   {
@@ -110,6 +113,9 @@ void SerialKeyboardClient_::_recievePacket(const uint8_t *data, size_t size)
         if (sendWindow[i] == packet.sequenceNum)
         {
           sendWindow[i] = EMPTY;
+#ifdef DEBUG
+          debugPrint("sendWindow res", sendWindow, SEND_WINDOW_SIZE);
+#endif
           break;
         }
       }
@@ -155,11 +161,8 @@ void SerialKeyboardClient_::_recievePacket(const uint8_t *data, size_t size)
         maxConnectionCount = MAX_CONNECTIONS;
       }
       connectionState = ack.body[1];
-      for (int i = 0; i < maxConnectionCount; i++)
-      {
-        connectionNames[i][0] = '\0';
-      }
-      int offset = 2;
+      // memset(connectionInfo, 0, sizeof(connectionInfo));
+      memcpy(connectionInfo, ack.body + 2, sizeof(ConnectionInfo) * maxConnectionCount);
       for (int i = 0; i < maxConnectionCount; i++)
       {
         if (offset >= ack.ackBodyLength)
@@ -170,9 +173,6 @@ void SerialKeyboardClient_::_recievePacket(const uint8_t *data, size_t size)
         {
           continue;
         }
-
-        memcpy(connectionNames[i], ack.body + offset, CONNECTION_NAME_LENGTH);
-        offset += CONNECTION_NAME_LENGTH;
       }
 #ifdef DEBUG
       Serial.print("Max connection count: ");
@@ -181,7 +181,7 @@ void SerialKeyboardClient_::_recievePacket(const uint8_t *data, size_t size)
       Serial.println(connectionID);
       for (int i = 0; i < maxConnectionCount; i++)
       {
-        if (connectionNames[i][0] != '\0')
+        if (connectionInfo[i].name[0] != '\0')
         {
           if (connectionState & (1 << i))
           {
@@ -201,7 +201,7 @@ void SerialKeyboardClient_::_recievePacket(const uint8_t *data, size_t size)
           Serial.print("Connection ");
           Serial.print(i);
           Serial.print(": ");
-          Serial.println(connectionNames[i]);
+          Serial.println(connectionInfo[i].name[i]);
         }
       }
 #endif
@@ -235,10 +235,6 @@ SerialKeyboardClient_::SerialKeyboardClient_() : HID_Keyboard()
   ledStateLastUpdate = 0;
   connectionStateLastUpdate = 0;
   queueSemaphore = NULL;
-  for (int i = 0; i < MAX_CONNECTIONS; i++)
-  {
-    connectionNames[i][0] = '\0';
-  }
   for (int i = 0; i < PACKET_QUEUE_SIZE; i++)
   {
     packetQueue[i].command = NOP;
@@ -278,8 +274,26 @@ void SerialKeyboardClient_::setStream(Stream *stream)
   packetSerial.setStream(stream);
 }
 
-void SerialKeyboardClient_::begin()
+void SerialKeyboardClient_::pauseUart(void)
 {
+#ifdef DEBUG
+  Serial.println("pause uart");
+#endif
+  uartPaused = true;
+}
+
+void SerialKeyboardClient_::resumeUart(void)
+{
+#ifdef DEBUG
+  Serial.println("resume uart");
+#endif
+  uartPaused = false;
+}
+
+void SerialKeyboardClient_::begin(void)
+{
+  resumeUart();
+  delay(1500);
   NormalPacket boot;
   boot.command = START;
   boot.bodyLength = 0;
@@ -312,7 +326,7 @@ int SerialKeyboardClient_::send(void)
 
   while (!pushPacket(&packet))
   {
-    delay(1);
+    delay(30);
     update();
   }
 
@@ -366,13 +380,13 @@ bool SerialKeyboardClient_::pushPacket(NormalPacket *packet)
   return true;
 }
 
-void SerialKeyboardClient_::popPacket(void)
+bool SerialKeyboardClient_::popPacket(void)
 {
   semaphoreAcquire();
   if (pqueueHead == pqueueTail)
   {
     semaphoreRelease();
-    return;
+    return true;
   }
 
 #ifdef DEBUG
@@ -383,17 +397,22 @@ void SerialKeyboardClient_::popPacket(void)
   if (!sendPacket(packet))
   {
     semaphoreRelease();
-    return;
+    return false;
   }
   packet->command = NOP;
   free(packet->body);
   packet->body = NULL;
   pqueueHead = (pqueueHead + 1) % PACKET_QUEUE_SIZE;
   semaphoreRelease();
+  return true;
 }
 
 bool SerialKeyboardClient_::sendPacket(NormalPacket *packet)
 {
+  if (uartPaused)
+  {
+    return false;
+  }
   uint8_t i = 0;
   if (packet->sequenceNum >= SEQUENCE_START)
   {
@@ -408,6 +427,10 @@ bool SerialKeyboardClient_::sendPacket(NormalPacket *packet)
     }
     if (i == SEND_WINDOW_SIZE)
     {
+#ifdef DEBUG
+      Serial.println("send window full");
+      debugPrint("sendWindow send", sendWindow, SEND_WINDOW_SIZE);
+#endif
       return false;
     }
   }
@@ -417,7 +440,7 @@ bool SerialKeyboardClient_::sendPacket(NormalPacket *packet)
   buffer[1] = packet->sequenceNum;
   buffer[2] = packet->bodyLength;
   memcpy(buffer + 3, packet->body, packet->bodyLength);
-  const uint8_t m = {_keyReport.modifiers};
+
   uint8_t sum = 0;
   for (int i = 0; i < packet->bodyLength + 3; i++)
   {
@@ -426,7 +449,10 @@ bool SerialKeyboardClient_::sendPacket(NormalPacket *packet)
   buffer[packet->bodyLength + 3] = sum;
 
 #ifdef DEBUG
-  debugPrint("keyReportkeys", (uint8_t *)_keyReport.keys, 6);
+  if (packet->command == KEY_REPORT)
+  {
+    debugPrint("keyReport", (uint8_t *)&_keyReport, sizeof(_keyReport));
+  }
   debugPrint("send", buffer, packet->bodyLength + 4);
 #endif
 
@@ -435,11 +461,11 @@ bool SerialKeyboardClient_::sendPacket(NormalPacket *packet)
   return true;
 }
 
-void SerialKeyboardClient_::update(void)
+bool SerialKeyboardClient_::update(void)
 {
-  popPacket();
+  bool res = popPacket();
   packetSerial.update();
-  delay(10);
+  return res;
   // if (millis() - lastDebugOutput > 1000)
   // {
   //   Serial.print(millis() - lastDebugOutput);
@@ -451,7 +477,7 @@ void SerialKeyboardClient_::update(void)
   // }
 }
 
-AdvertisingState SerialKeyboardClient_::getAdvertisingState(void)
+AdvertisingState SerialKeyboardClient_::refreshAdvertisingState(void)
 {
   advertising = UNKNOWN;
   NormalPacket pac;
@@ -470,7 +496,7 @@ AdvertisingState SerialKeyboardClient_::getAdvertisingState(void)
 
 void SerialKeyboardClient_::startAdv(void)
 {
-  getAdvertisingState();
+  refreshAdvertisingState();
   if (advertising == ADVERTISING)
   {
     return;
@@ -487,7 +513,7 @@ void SerialKeyboardClient_::startAdv(void)
 
 void SerialKeyboardClient_::stopAdv(void)
 {
-  getAdvertisingState();
+  refreshAdvertisingState();
   if (advertising == NOT_ADVERTISING)
   {
     return;
@@ -502,7 +528,7 @@ void SerialKeyboardClient_::stopAdv(void)
   // sendPacket(&pac);
 }
 
-void SerialKeyboardClient_::getConnectionInfo(void)
+void SerialKeyboardClient_::refreshConnectionInfo(void)
 {
   NormalPacket pac;
   pac.command = GET_CONNECTION_INFO;
@@ -533,7 +559,7 @@ void SerialKeyboardClient_::getConnectionName(uint8_t id, char *name)
     return;
   }
   semaphoreAcquire();
-  memcpy(name, connectionNames[id], CONNECTION_NAME_LENGTH);
+  memcpy(name, connectionInfo[id].name, CONNECTION_NAME_LENGTH);
   semaphoreRelease();
 }
 SerialKeyboardClient_ SerialKeyboardClient;

@@ -22,6 +22,7 @@ enum KeyboardUsageId : uint8_t
 {
     // usage type = Sel
     KEY_RESERVED = 0x00,
+    KEY_NONE = 0x00,
     KEY_ERROR_ROLLOVER = 0x01,
     KEY_POST_FAIL = 0x02,
     KEY_ERROR_UNDEFINED = 0x03,

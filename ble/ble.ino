@@ -1,6 +1,7 @@
 #include "SerialKeyboardHost.h"
 
-void setup() {
+void setup()
+{
   Serial.begin(115200);
   delay(100);
 
@@ -9,9 +10,11 @@ void setup() {
 
   delay(100);
 
+  SerialKeyboardHost.startAdv();
 }
 
-void loop() {
+void loop()
+{
   SerialKeyboardHost.update();
   delay(1);
 }

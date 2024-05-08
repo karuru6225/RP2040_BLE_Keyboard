@@ -2,6 +2,7 @@
 
 #define MAX_CONNECTIONS 3
 #define CONNECTION_NAME_LENGTH 32
+#define MAC_ADDRESS_LENGTH 6
 #define DISCONNECTED -1
 #define PACKET_HEADER_SIZE 3
 
@@ -10,7 +11,6 @@ typedef enum _Command : uint8_t
   NOP = 0x00,
 
   START = 0x01,
-  SET_BATTERY_LEVEL = 0x04,
 
   GET_ADVERTISING_STATE = 0x10,
   START_ADV = 0x11,
@@ -60,18 +60,10 @@ NOP
 Command Body -> none
 ACK BODY -> none
 
-START
-Command Body -> none
-ACK BODY -> none
-
-SET_BATTERY_LEVEL
-Command Body -> | Battery Level |
-ACK BODY -> none
-
 GET_CONNECTION_INFO
 Command Body -> none
 ACK BODY ->
-| Max Connection Count | Connection State bitmap | Connection1 Name \0 | ... |
+| Max Connection Count | Connection State bitmap | mac address1 | Connection1 Name \0 | ... |
 
 SWITCH_CONNECTION
 Command Body -> | Connection ID |
@@ -110,3 +102,9 @@ struct AckPacket
   uint8_t sequenceNum;
   uint8_t *body;
 };
+
+typedef struct ConnectionInfo_
+{
+  uint8_t mac[6];
+  char name[CONNECTION_NAME_LENGTH];
+} ConnectionInfo;
